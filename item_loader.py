@@ -66,8 +66,11 @@ class ItemLoader:
     def get_index_by_label(self, name):
         return self.label.index(name)
 
-    def get_img(self, index):
-        return self.img[index]
+    def get_img(self, index=None):
+        if index:
+            return self.img[index]
+        else:
+            return self.img
 
     def get_label(self, index):
         return self.label[index]
