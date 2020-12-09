@@ -244,7 +244,6 @@ class SKU110KSampler:
         # make dataset_ids
         print('Making dataset ids...')
         self.generate_ids('dataset/dataset_ids/train.txt', 0, val)
-        self.generate_ids('dataset/dataset_ids/trainval.txt', 0, test)
         self.generate_ids('dataset/dataset_ids/val.txt', val, test)
         self.generate_ids('dataset/dataset_ids/test.txt', test, len(self.random_list))
         # make XML
@@ -253,6 +252,6 @@ class SKU110KSampler:
         return dir
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=10, skip_p=0.5)
+    sampler = SKU110KSampler(num_files=10000, skip_p=0.5)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
