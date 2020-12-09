@@ -7,8 +7,9 @@ from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 import pandas as pd
 import numpy as np
-from PIL import Image
-from PIL import ImageFile
+from skimage.util import random_noise
+import cv2
+from PIL import Image, ImageFile, ImageFilter
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 import matplotlib.pyplot as plt
@@ -83,12 +84,65 @@ class SKU110KSampler:
                                 for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
         self.new_annotations += new_annotation
 
+        bg_ = np.array(bg, dtype=np.uint8)
+        # load item images
+        imgs = sampler.loader.get_img()
+
+        # detect blurry (prevent big size assert)
+        bg_blurry = np.log(np.log(cv2.Laplacian(cv2.resize(bg_, (bg_.shape[0]//2, bg_.shape[1]//2)), cv2.CV_64F).var()))
+        #print(bg_blurry)
+        # generate blur, noisy item
+        for i, im in enumerate(imgs):
+            im_ = np.array(im, dtype=np.uint8)
+            img_blurry = np.log(np.log(cv2.Laplacian(im_, cv2.CV_64F).var()))
+            # y = -(a/2)x + a
+            img_gaussian = (img_blurry - bg_blurry) * 2 / img_blurry if img_blurry != 0 else 2
+            #print(img_blurry, img_gaussian)
+            if img_gaussian < 0:
+                img_gaussian = 0
+
+            # gaussian blur
+            img_filter = ImageFilter.GaussianBlur(img_gaussian)
+            imgs[i] = im.filter(img_filter)
+
+            # random gaussian noise
+            rand_mean = np.random.random() / 10
+            rand_var = np.random.random() / 100
+            img_ = random_noise(np.array(imgs[i], dtype=np.uint8), mode='gaussian', seed=None, clip=True, mean=rand_mean, var=rand_var)
+
+            img_ = (img_ * 255 * 0.8).astype(np.uint8)
+            img_[:,:,-1] = im_[:,:,-1]
+
+            # final item
+            imgs[i] = Image.fromarray(img_)
+
+
+        # extract histogram
+        '''bg_val, bg_cnt = np.unique(bg_, return_counts=True)
+        bg_hist = np.cumsum(bg_cnt).astype(np.float64)
+        bg_hist /= bg_hist[-1]'''
+
         for a in new_annotation:
-            img = self.loader.get_img(self.loader.get_index_by_label(a[5]))
-            img = img.resize((a[3]-a[1], a[4]-a[2]))
+            img = imgs[self.loader.get_index_by_label(a[5])]
+            img_shape = (a[3] - a[1], a[4] - a[2])
+            img = img.resize(img_shape)
+
+            #print(np.log(np.log(cv2.Laplacian(bg_[a[2]:a[4], a[1]:a[3]], cv2.CV_64F).var())))
+
 
             # overlay on background img
             bg.paste(img, (a[1], a[2]), img)
+
+            # matching histogram
+            #img = match_histograms(img_[:,:,:-1], bg_, multichannel=True)
+            '''img_val, img_idx, img_cnt = np.unique(np.array(img), return_inverse=True, return_counts=True)
+            img_hist = np.cumsum(img_cnt).astype(np.float64)
+            img_hist /= img_hist[-1]
+
+            img = np.interp(img_hist, bg_hist, bg_val)
+            img = img[img_idx].reshape(img_shape + (4,))'''
+            #img = Image.fromarray(np.concatenate((img, img_[:,:,-1:]), axis=2).astype(np.uint8))
+
 
         return bg
         '''
@@ -113,16 +167,19 @@ class SKU110KSampler:
                 self.new_annotations = pd.concat((self.new_annotations, row))
         '''
 
+
     # generate merged image bg with items
     def generate_img_dataset(self, dir='images/'):
         cnt = 0
         num_list = len(self.random_list)
+        if not os.path.isdir('images/'):
+            os.mkdir('images/')
         for img in self.random_list:
             filename = '{}{}.jpg'.format(dir, cnt)
             img_ = self.generate_img(img, filename)
             img_.save(filename)
             cnt += 1
-            if cnt % (num_list // 10) == 0:
+            if num_list < 10 or cnt % (num_list // 10) == 0:
                 print('{}/{} Image Generated.'.format(cnt, num_list))
 
     def generate_xml(self):
@@ -196,6 +253,6 @@ class SKU110KSampler:
         return dir
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=1000, skip_p=0.5)
+    sampler = SKU110KSampler(num_files=10, skip_p=0.5)
     sampler.generate_img_dataset()
     sampler.generate_annotations()

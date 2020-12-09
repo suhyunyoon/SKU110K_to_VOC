@@ -68,9 +68,9 @@ class ItemLoader:
 
     def get_img(self, index=None):
         if index:
-            return self.img[index]
+            return self.img[index].copy()
         else:
-            return self.img
+            return self.img.copy()
 
     def get_label(self, index):
         return self.label[index]
