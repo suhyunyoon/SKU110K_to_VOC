@@ -22,7 +22,7 @@ def showimg(img):
 
 
 class SKU110KSampler:
-    def __init__(self, dir='./SKU110K_fixed/', num_files=100, skip_p=0.0, val_p=0.1, test_p=0.3):
+    def __init__(self, dir='./SKU110K_fixed/', num_files=100, skip_p=0.5, val_p=0.1, test_p=0.1):
         self.dir = dir if dir[-1] != '/' else dir+'/'
         self.num_files = num_files
         self.skip_p = skip_p
@@ -251,7 +251,37 @@ class SKU110KSampler:
 
         return dir
 
+    # check error from generated files
+    def check_error(self):
+        imgs = glob.glob('images/*')
+        xmls = glob.glob('dataset/annotations/*.xml')
+
+        xmls = list(map(lambda a: int(os.path.split(a)[1][:-4]), xmls))
+        imgs = list(map(lambda a: int(os.path.split(a)[1][:-4]), imgs))
+
+        xmls.sort()
+        imgs.sort()
+
+        for xml, img in zip(xmls, imgs):
+            if xml != img:
+                if xml < img:
+                    print('{}.jpg Not Generated!'.format(xml))
+                else:
+                    print('{}.xml Not Generated!'.format(img))
+                return
+
+        img_len = len(imgs)
+        xml_len = len(xmls)
+        if xml_len > img_len:
+            print('{}.jpg Not Generated!'.format(img_len))
+        elif xml_len < img_len:
+            print('{}.xml Not Generated!'.format(xml_len))
+        else:
+            print('All files Generated.')
+
+
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=10000, skip_p=0.5)
+    sampler = SKU110KSampler(num_files=100, skip_p=0.5)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
+    sampler.check_error()
