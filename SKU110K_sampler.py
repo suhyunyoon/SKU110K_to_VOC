@@ -126,7 +126,7 @@ class SKU110KSampler:
         seg = seg.iloc[np.random.choice(num_seg, int(num_seg*(1.0 - self.skip_p)), replace=False)]
 
         new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3], row[4], row[5])
-                                for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
+                            for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
 
         for a in new_annotation:
             img = imgs[self.loader.get_index_by_label(a[5])]
@@ -153,7 +153,14 @@ class SKU110KSampler:
             width, height = new_annotation[0][-2], new_annotation[0][-1]
             w_num, h_num = width // self.patch_size, height // self.patch_size
             w_pad, h_pad = width % self.patch_size, height % self.patch_size
-            w_stride, h_stride = w_pad // w_num, h_pad // h_num
+            w_stride, h_stride = self.patch_size - w_pad // w_num, self.patch_size - h_pad // h_num
+
+            # (w * self.patch_size, h * self.patch_size)
+            for w in range(w_num):
+                for h in range(h_num):
+                    #ret.append()
+                    pass
+
 
         # patch로 나눌 필요가 없어서 annotation 추가
         else:
