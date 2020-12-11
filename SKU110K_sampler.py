@@ -128,8 +128,6 @@ class SKU110KSampler:
             img = img.resize(img_shape)
 
             #print(np.log(np.log(cv2.Laplacian(bg_[a[2]:a[4], a[1]:a[3]], cv2.CV_64F).var())))
-
-
             # overlay on background img
             bg.paste(img, (a[1], a[2]), img)
 
@@ -172,8 +170,12 @@ class SKU110KSampler:
     def generate_img_dataset(self, dir='images/'):
         cnt = 0
         num_list = len(self.random_list)
-        if not os.path.isdir('images/'):
-            os.mkdir('images/')
+
+        # make directory (remove exist dir)
+        if os.path.isdir('images/'):
+            shutil.rmtree('images/')
+        os.mkdir('images/')
+
         for img in self.random_list:
             filename = '{}{}.jpg'.format(dir, cnt)
             img_ = self.generate_img(img, filename)
