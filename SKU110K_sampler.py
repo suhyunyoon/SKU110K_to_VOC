@@ -22,9 +22,10 @@ def showimg(img):
 
 
 class SKU110KSampler:
-    def __init__(self, dir='./SKU110K_fixed/', num_files=100, skip_p=0.5, val_p=0.1, test_p=0.1):
+    def __init__(self, dir='./SKU110K_fixed/', num_files=100, patch_size=None, skip_p=0.5, val_p=0.1, test_p=0.1):
         self.dir = dir if dir[-1] != '/' else dir+'/'
         self.num_files = num_files
+        self.patch_size = patch_size
         self.skip_p = skip_p
         self.val_p = val_p
         self.test_p = test_p
@@ -64,9 +65,53 @@ class SKU110KSampler:
         ratio = self.loader.get_aspect_ratio(item)
         return [filename, xmin, ymin, xmin+int(ratio * (ymax-ymin)), ymax, self.loader.get_label(item), width, height]
 
+    def generate_noisy_img(self, img, bg_blurry):
+        np_img = np.array(img, dtype=np.uint8)
+        img_blurry = np.log(np.log(cv2.Laplacian(np_img, cv2.CV_64F).var()))
+        # y = -(a/2)x + a
+        img_gaussian = (img_blurry - bg_blurry) * 2 / img_blurry if img_blurry != 0 else 2
+        # print(img_blurry, img_gaussian)
+        if img_gaussian < 0:
+            img_gaussian = 0
+
+        # gaussian blur
+        img_filter = ImageFilter.GaussianBlur(img_gaussian)
+        img_ = img.filter(img_filter)
+
+        # random gaussian noise
+        rand_mean = np.random.random() / 10
+        rand_var = np.random.random() / 100
+        img_ = random_noise(np.array(img_, dtype=np.uint8), mode='gaussian', seed=None, clip=True, mean=rand_mean,
+                            var=rand_var)
+
+        img_ = (img_ * 255 * 0.8).astype(np.uint8)
+        img_[:, :, -1] = np_img[:, :, -1]
+
+        return Image.fromarray(img_)
+
     def generate_img(self, img_file, filename):
         # open image file
         bg = Image.open(self.dir + 'images/' + img_file)
+        bg_ = np.array(bg, dtype=np.uint8)
+
+        # load item images
+        imgs = sampler.loader.get_img()
+
+        # detect blurry (prevent big size assert)
+        bg_blurry = np.log(np.log(cv2.Laplacian(cv2.resize(bg_, (bg_.shape[0]//2, bg_.shape[1]//2)), cv2.CV_64F).var()))
+        #print(bg_blurry)
+
+        # generate blur, noisy item
+        for i, im in enumerate(imgs):
+            # make noise
+            imgs[i] = self.generate_noisy_img(im, bg_blurry)
+
+        # extract histogram
+        '''bg_val, bg_cnt = np.unique(bg_, return_counts=True)
+        bg_hist = np.cumsum(bg_cnt).astype(np.float64)
+        bg_hist /= bg_hist[-1]'''
+
+
         # segments of the img_file
         seg = self.annotations.loc[self.annotations['filename'] == img_file]
         '''
@@ -82,45 +127,6 @@ class SKU110KSampler:
 
         new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3], row[4], row[5])
                                 for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
-        self.new_annotations += new_annotation
-
-        bg_ = np.array(bg, dtype=np.uint8)
-        # load item images
-        imgs = sampler.loader.get_img()
-
-        # detect blurry (prevent big size assert)
-        bg_blurry = np.log(np.log(cv2.Laplacian(cv2.resize(bg_, (bg_.shape[0]//2, bg_.shape[1]//2)), cv2.CV_64F).var()))
-        #print(bg_blurry)
-        # generate blur, noisy item
-        for i, im in enumerate(imgs):
-            im_ = np.array(im, dtype=np.uint8)
-            img_blurry = np.log(np.log(cv2.Laplacian(im_, cv2.CV_64F).var()))
-            # y = -(a/2)x + a
-            img_gaussian = (img_blurry - bg_blurry) * 2 / img_blurry if img_blurry != 0 else 2
-            #print(img_blurry, img_gaussian)
-            if img_gaussian < 0:
-                img_gaussian = 0
-
-            # gaussian blur
-            img_filter = ImageFilter.GaussianBlur(img_gaussian)
-            imgs[i] = im.filter(img_filter)
-
-            # random gaussian noise
-            rand_mean = np.random.random() / 10
-            rand_var = np.random.random() / 100
-            img_ = random_noise(np.array(imgs[i], dtype=np.uint8), mode='gaussian', seed=None, clip=True, mean=rand_mean, var=rand_var)
-
-            img_ = (img_ * 255 * 0.8).astype(np.uint8)
-            img_[:,:,-1] = im_[:,:,-1]
-
-            # final item
-            imgs[i] = Image.fromarray(img_)
-
-
-        # extract histogram
-        '''bg_val, bg_cnt = np.unique(bg_, return_counts=True)
-        bg_hist = np.cumsum(bg_cnt).astype(np.float64)
-        bg_hist /= bg_hist[-1]'''
 
         for a in new_annotation:
             img = imgs[self.loader.get_index_by_label(a[5])]
@@ -141,8 +147,21 @@ class SKU110KSampler:
             img = img[img_idx].reshape(img_shape + (4,))'''
             #img = Image.fromarray(np.concatenate((img, img_[:,:,-1:]), axis=2).astype(np.uint8))
 
+        ret = []
+        # patch로 나눠서 image와 annotation 추가
+        if self.patch_size:
+            width, height = new_annotation[0][-2], new_annotation[0][-1]
+            w_num, h_num = width // self.patch_size, height // self.patch_size
+            w_pad, h_pad = width % self.patch_size, height % self.patch_size
+            w_stride, h_stride = w_pad // w_num, h_pad // h_num
 
-        return bg
+        # patch로 나눌 필요가 없어서 annotation 추가
+        else:
+            self.new_annotations += new_annotation
+            ret.append(bg)
+
+
+        return ret
         '''
         # for segments
         for i, row in seg.iterrows():
@@ -176,11 +195,14 @@ class SKU110KSampler:
             shutil.rmtree('images/')
         os.mkdir('images/')
 
+        filename = '{}{}.jpg'.format(dir, cnt)
         for img in self.random_list:
-            filename = '{}{}.jpg'.format(dir, cnt)
-            img_ = self.generate_img(img, filename)
-            img_.save(filename)
-            cnt += 1
+            img_list = self.generate_img(img, filename)
+            for im in img_list:
+                im.save(filename)
+                cnt += 1
+                filename = '{}{}.jpg'.format(dir, cnt)
+
             if num_list < 10 or cnt % (num_list // 10) == 0:
                 print('{}/{} Image Generated.'.format(cnt, num_list))
 
@@ -264,26 +286,28 @@ class SKU110KSampler:
         xmls.sort()
         imgs.sort()
 
+        flag = True
         for xml, img in zip(xmls, imgs):
             if xml != img:
                 if xml < img:
-                    print('{}.jpg Not Generated!'.format(xml))
+                    print('{}.jpg ~ {}.jpg Not Generated!'.format(img+1, xml))
                 else:
-                    print('{}.xml Not Generated!'.format(img))
-                return
+                    print('{}.xml ~ {}.xml Not Generated!'.format(xml+1, img))
+                flag = False
 
-        img_len = len(imgs)
-        xml_len = len(xmls)
-        if xml_len > img_len:
-            print('{}.jpg Not Generated!'.format(img_len))
-        elif xml_len < img_len:
-            print('{}.xml Not Generated!'.format(xml_len))
-        else:
-            print('All files Generated.')
+        if flag:
+            img_len = len(imgs)
+            xml_len = len(xmls)
+            if xml_len > img_len:
+                print('{}.jpg Not Generated!'.format(img_len))
+            elif xml_len < img_len:
+                print('{}.xml Not Generated!'.format(xml_len))
+            else:
+                print('All files Generated.')
 
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=100, skip_p=0.5)
+    sampler = SKU110KSampler(num_files=10, skip_p=0.5)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
     sampler.check_error()
