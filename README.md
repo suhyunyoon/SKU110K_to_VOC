@@ -1,5 +1,5 @@
 # SKU110K_to_VOC
-[SKU110K](https://github.com/eg4000/SKU110K_CVPR19)의 매대의 goods image를 custom goods image로 교체해 VOC annotation 생성
+[SKU110K dataset](https://github.com/eg4000/SKU110K_CVPR19) 의 매대의 goods image를 custom goods image로 교체해 VOC annotation 생성
 
 
 #### Examples.
