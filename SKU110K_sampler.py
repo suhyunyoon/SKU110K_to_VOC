@@ -158,7 +158,8 @@ class SKU110KSampler:
             # (w * self.patch_size, h * self.patch_size)
             for w in range(w_num):
                 for h in range(h_num):
-
+                    bg_patch = bg.crop((w * self.patch_size, h * self.patch_size,
+                                        (w + 1) * self.patch_size, (h + 1) * self.patch_size))
 
 
                     # save image
@@ -166,7 +167,7 @@ class SKU110KSampler:
                     cnt += 1
                     new_annotation = [[filename]+row[1:] for row in new_annotation]
                     self.new_annotations += new_annotation
-                    bg.save(filename)
+                    bg_patch.save(filename)
 
 
         # patch로 나눌 필요가 없어서 annotation 추가
@@ -320,7 +321,7 @@ class SKU110KSampler:
 
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(dir='D:\\User\\dataset\\SKU110K_fixed\\', num_files=10, skip_p=0.5)
+    sampler = SKU110KSampler( num_files=10, patch_size=640, skip_p=0.3)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
     sampler.check_error()
