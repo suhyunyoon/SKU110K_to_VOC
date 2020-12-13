@@ -89,7 +89,7 @@ class SKU110KSampler:
 
         return Image.fromarray(img_)
 
-    def generate_img(self, img_file, filename):
+    def generate_img(self, img_file, dir, cnt):
         # open image file
         bg = Image.open(self.dir + 'images/' + img_file)
         bg_ = np.array(bg, dtype=np.uint8)
@@ -125,7 +125,7 @@ class SKU110KSampler:
         num_seg = len(seg)
         seg = seg.iloc[np.random.choice(num_seg, int(num_seg*(1.0 - self.skip_p)), replace=False)]
 
-        new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3], row[4], row[5])
+        new_annotation = [self.generate_new_annotation('', row[0], row[1], row[2], row[3], row[4], row[5])
                             for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
 
         for a in new_annotation:
@@ -158,17 +158,26 @@ class SKU110KSampler:
             # (w * self.patch_size, h * self.patch_size)
             for w in range(w_num):
                 for h in range(h_num):
-                    #ret.append()
-                    pass
+
+
+
+                    # save image
+                    filename = '{}{}.jpg'.format(dir, cnt)
+                    cnt += 1
+                    new_annotation = [[filename]+row[1:] for row in new_annotation]
+                    self.new_annotations += new_annotation
+                    bg.save(filename)
 
 
         # patch로 나눌 필요가 없어서 annotation 추가
         else:
+            filename = '{}{}.jpg'.format(dir, cnt)
+            cnt += 1
+            new_annotation = [[filename]+row[1:] for row in new_annotation]
             self.new_annotations += new_annotation
-            ret.append(bg)
+            bg.save(filename)
 
-
-        return ret
+        return ret, cnt
         '''
         # for segments
         for i, row in seg.iterrows():
@@ -202,16 +211,13 @@ class SKU110KSampler:
             shutil.rmtree('images/')
         os.mkdir('images/')
 
+        print('Generating Images from {} Background Images...'.format(num_list))
         filename = '{}{}.jpg'.format(dir, cnt)
-        for img in self.random_list:
-            img_list = self.generate_img(img, filename)
-            for im in img_list:
-                im.save(filename)
-                cnt += 1
-                filename = '{}{}.jpg'.format(dir, cnt)
+        for i, img in enumerate(self.random_list):
+            img_list, cnt = self.generate_img(img, dir, cnt)
 
-            if num_list < 10 or cnt % (num_list // 10) == 0:
-                print('{}/{} Image Generated.'.format(cnt, num_list))
+            if num_list < 10 or (i+1) % (num_list // 10) == 0:
+                print('{}% Done, {} Image Generated.'.format(int((i+1) / num_list * 100), cnt, num_list))
 
     def generate_xml(self):
         print('Making XML annotations...')
@@ -284,7 +290,7 @@ class SKU110KSampler:
 
     # check error from generated files
     def check_error(self):
-        imgs = glob.glob('images/*')
+        imgs = glob.glob('images/*.jpg')
         xmls = glob.glob('dataset/annotations/*.xml')
 
         xmls = list(map(lambda a: int(os.path.split(a)[1][:-4]), xmls))
@@ -314,7 +320,7 @@ class SKU110KSampler:
 
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=10, skip_p=0.5)
+    sampler = SKU110KSampler(dir='D:\\User\\dataset\\SKU110K_fixed\\', num_files=10, skip_p=0.5)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
     sampler.check_error()
