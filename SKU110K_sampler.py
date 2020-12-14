@@ -3,7 +3,7 @@ from item_loader import ItemLoader
 import glob
 import os
 import shutil
-import xml.etree.ElementTree
+import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 import pandas as pd
@@ -24,7 +24,7 @@ def showimg(img):
 def show_annotation(index=None, color=(0,255,0)):
     for num in index:
         img = cv2.cvtColor(cv2.imread('images/{}.jpg'.format(num)), cv2.COLOR_BGR2RGB)
-        tree = ElementTree.parse('country_data.xml')
+        tree = ET.parse('dataset/annotations/{}.xml'.format(num))
         root = tree.getroot()
         for box in root[6:]:
             img = cv2.rectangle(img, (int(box[4][0].text), int(box[4][1].text)), (int(box[4][2].text), int(box[4][3].text)), color, 2)
@@ -148,21 +148,20 @@ class SKU110KSampler:
             img_shape = (a[3] - a[1], a[4] - a[2])
             img = img.resize(img_shape)
 
-            #print(np.log(np.log(cv2.Laplacian(bg_[a[2]:a[4], a[1]:a[3]], cv2.CV_64F).var())))
             # overlay on background img
             bg.paste(img, (a[1], a[2]), img)
-
-            # matching histogram
-            #img = match_histograms(img_[:,:,:-1], bg_, multichannel=True)
-            '''img_val, img_idx, img_cnt = np.unique(np.array(img), return_inverse=True, return_counts=True)
-            img_hist = np.cumsum(img_cnt).astype(np.float64)
-            img_hist /= img_hist[-1]
-
-            img = np.interp(img_hist, bg_hist, bg_val)
-            img = img[img_idx].reshape(img_shape + (4,))'''
-            #img = Image.fromarray(np.concatenate((img, img_[:,:,-1:]), axis=2).astype(np.uint8))
+            # matching histogram (not developed)
 
         ret = []
+        # patch size보다 작으면 resize
+        bg_size = bg.size
+        if bg_size[0] < self.patch_size or bg_size[1] < self.patch_size:
+            new_size_w, new_size_h = bg_size
+            if bg_size[0] < self.patch_size:
+                new_size_w = self.patch_size
+            if bg_size[1] < self.patch_size:
+                new_size_h = self.patch_size
+            bg = bg.resize((new_size_w, new_size_h))
         # patch로 나눠서 image와 annotation 추가
         if self.patch_size:
             width, height = new_annotation[0][-2], new_annotation[0][-1]
@@ -207,28 +206,6 @@ class SKU110KSampler:
             bg.save(filename)
 
         return ret, cnt
-        '''
-        # for segments
-        for i, row in seg.iterrows():
-            # check skip
-            if np.random.rand() >= self.skip_p:
-                # choose a item
-                rand_i = np.random.randint(num_imgs)
-                img_ = imgs[rand_i]
-                # size
-                x, y = img_.size
-                new_y = row['ymax'] - row['ymin']
-                new_size = (int(x / y * new_y), new_y)
-                # resize into exist annotation
-                img_ = img_.resize(new_size)
-
-                # overlay on background img
-                bg.paste(img_, (row['xmin'], row['ymin']), img_)
-
-                # generate new annotations
-                self.new_annotations = pd.concat((self.new_annotations, row))
-        '''
-
 
     # generate merged image bg with items
     def generate_img_dataset(self, dir='images/'):
@@ -353,7 +330,7 @@ class SKU110KSampler:
 
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler(num_files=10, patch_size=640, skip_p=0.3)
+    sampler = SKU110KSampler(num_files=11700, patch_size=640, skip_p=0.3)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
     sampler.check_error()
