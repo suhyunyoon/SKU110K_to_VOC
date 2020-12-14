@@ -72,10 +72,16 @@ class SKU110KSampler:
         self.annotations = pd.merge(df, pd.DataFrame(self.random_list, columns=['filename']), left_on='filename', right_on='filename', how='inner')
 
     # annotation of overlapped item
-    def generate_new_annotation(self, filename, xmin, ymin, xmax, ymax, width, height):
+    def generate_new_annotation(self, filename, xmin, ymin, xmax, ymax, width, height, patch_size=None):
         item = self.loader.get_index_by_similar_ratio((xmax-xmin)/(ymax-ymin))
         ratio = self.loader.get_aspect_ratio(item)
-        return [filename, xmin, ymin, xmin+int(ratio * (ymax-ymin)), ymax, self.loader.get_label(item), width, height]
+        xmax_ = xmin+int(ratio * (ymax-ymin))
+        # 보정값
+        if patch_size:
+            return [filename, xmin if xmin >= 0 else 0, ymin if ymin >= 0 else 0, xmax_ if xmax < patch_size else patch_size - 1,
+                    ymax if ymax < patch_size else patch_size - 1, self.loader.get_label(item), width, height]
+        else:
+            return [filename, xmin, ymin, xmax_, ymax, self.loader.get_label(item), width, height]
 
     def generate_noisy_img(self, img, bg_blurry):
         np_img = np.array(img, dtype=np.uint8)
@@ -143,7 +149,7 @@ class SKU110KSampler:
         new_annotation = [self.generate_new_annotation('', row[0], row[1], row[2], row[3], row[4], row[5])
                             for row in seg.loc[:, ['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
 
-        for a in new_annotation:
+        for i, a in enumerate(new_annotation):
             img = imgs[self.loader.get_index_by_label(a[5])]
             img_shape = (a[3] - a[1], a[4] - a[2])
             img = img.resize(img_shape)
@@ -164,7 +170,7 @@ class SKU110KSampler:
             bg = bg.resize((new_size_w, new_size_h))
         # patch로 나눠서 image와 annotation 추가
         if self.patch_size:
-            width, height = new_annotation[0][-2], new_annotation[0][-1]
+            width, height = bg.size
             w_num, h_num = width // self.patch_size, height // self.patch_size
             w_pad, h_pad = width % self.patch_size, height % self.patch_size
             w_stride, h_stride = self.patch_size - w_pad // w_num, self.patch_size - h_pad // h_num
@@ -172,27 +178,25 @@ class SKU110KSampler:
             # (w * self.patch_size, h * self.patch_size)
             for w in range(w_num):
                 for h in range(h_num):
-                    bg_patch = bg.crop((w * self.patch_size, h * self.patch_size,
-                                        (w + 1) * self.patch_size, (h + 1) * self.patch_size))
+                    xmin, xmax = w * w_stride, w * w_stride + self.patch_size
+                    ymin, ymax = h * h_stride, h * h_stride + self.patch_size
+                    bg_patch = bg.crop((xmin, ymin, xmax, ymax))
 
                     # save image
                     filename = '{}{}.jpg'.format(dir, cnt)
 
                     # make annotations of patch
-                    seg_ = seg.loc[(seg['xcenter'] >= w * self.patch_size) & (seg['xcenter'] < (w + 1) * self.patch_size) &
-                                   (seg['ycenter'] >= h * self.patch_size) & (seg['ycenter'] < (h + 1) * self.patch_size)].copy()
+                    seg_ = seg.loc[(seg['xcenter'] >= xmin) & (seg['xcenter'] < xmax) & (seg['ycenter'] >= ymin) & (seg['ycenter'] < ymax)].copy()
 
                     # except image with no annotation
                     if len(seg_) > 0:
                         # adjust patch
-                        seg_.loc[:, ['xmin', 'xmax']] -= w * self.patch_size
-                        seg_.loc[:, ['ymin', 'ymax']] -= h * self.patch_size
-                        seg_['xmin'].where(seg_['xmin'] >= 0, 0, inplace=True)
-                        seg_['ymin'].where(seg_['ymin'] >= 0, 0, inplace=True)
-                        seg_['xmax'].where(seg_['xmax'] < self.patch_size, self.patch_size - 1, inplace=True)
-                        seg_['ymax'].where(seg_['ymax'] < self.patch_size, self.patch_size - 1, inplace=True)
-                        new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3], self.patch_size, self.patch_size)
+                        seg_.loc[:, ['xmin', 'xmax']] -= xmin
+                        seg_.loc[:, ['ymin', 'ymax']] -= ymin
+                        new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3],
+                                            self.patch_size, self.patch_size, self.patch_size)
                                           for row in seg_.loc[:, ['xmin', 'ymin', 'xmax', 'ymax']].to_numpy()]
+                        # add
                         self.new_annotations += new_annotation
                         bg_patch.save(filename)
                         cnt += 1
