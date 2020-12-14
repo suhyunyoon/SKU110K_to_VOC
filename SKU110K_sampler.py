@@ -3,6 +3,7 @@ from item_loader import ItemLoader
 import glob
 import os
 import shutil
+import xml.etree.ElementTree
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 import pandas as pd
@@ -20,6 +21,17 @@ def showimg(img):
     plt.imshow(img)
     plt.show()
 
+def show_annotation(index=None, color=(0,255,0)):
+    for num in index:
+        img = cv2.cvtColor(cv2.imread('images/{}.jpg'.format(num)), cv2.COLOR_BGR2RGB)
+        tree = ElementTree.parse('country_data.xml')
+        root = tree.getroot()
+        for box in root[6:]:
+            img = cv2.rectangle(img, (int(box[4][0].text), int(box[4][1].text)), (int(box[4][2].text), int(box[4][3].text)), color, 2)
+
+        plt.axis("off")
+        plt.imshow(img)
+        plt.show()
 
 class SKU110KSampler:
     def __init__(self, dir='./SKU110K_fixed/', num_files=100, patch_size=None, skip_p=0.5, val_p=0.1, test_p=0.1):
