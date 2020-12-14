@@ -124,9 +124,12 @@ class SKU110KSampler:
         # skip segments
         num_seg = len(seg)
         seg = seg.iloc[np.random.choice(num_seg, int(num_seg*(1.0 - self.skip_p)), replace=False)]
+        # center (use in patch split)
+        seg['xcenter'] = (seg['xmin'] + seg['xmax']) // 2
+        seg['ycenter'] = (seg['ymin'] + seg['ymax']) // 2
 
         new_annotation = [self.generate_new_annotation('', row[0], row[1], row[2], row[3], row[4], row[5])
-                            for row in seg[['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
+                            for row in seg.loc[:, ['xmin', 'ymin', 'xmax', 'ymax', 'width', 'height']].to_numpy()]
 
         for a in new_annotation:
             img = imgs[self.loader.get_index_by_label(a[5])]
@@ -161,14 +164,27 @@ class SKU110KSampler:
                     bg_patch = bg.crop((w * self.patch_size, h * self.patch_size,
                                         (w + 1) * self.patch_size, (h + 1) * self.patch_size))
 
-
                     # save image
                     filename = '{}{}.jpg'.format(dir, cnt)
-                    cnt += 1
-                    new_annotation = [[filename]+row[1:] for row in new_annotation]
-                    self.new_annotations += new_annotation
-                    bg_patch.save(filename)
 
+                    # make annotations of patch
+                    seg_ = seg.loc[(seg['xcenter'] >= w * self.patch_size) & (seg['xcenter'] < (w + 1) * self.patch_size) &
+                                   (seg['ycenter'] >= h * self.patch_size) & (seg['ycenter'] < (h + 1) * self.patch_size)].copy()
+
+                    # except image with no annotation
+                    if len(seg_) > 0:
+                        # adjust patch
+                        seg_.loc[:, ['xmin', 'xmax']] -= w * self.patch_size
+                        seg_.loc[:, ['ymin', 'ymax']] -= h * self.patch_size
+                        seg_['xmin'].where(seg_['xmin'] >= 0, 0, inplace=True)
+                        seg_['ymin'].where(seg_['ymin'] >= 0, 0, inplace=True)
+                        seg_['xmax'].where(seg_['xmax'] < self.patch_size, self.patch_size - 1, inplace=True)
+                        seg_['ymax'].where(seg_['ymax'] < self.patch_size, self.patch_size - 1, inplace=True)
+                        new_annotation = [self.generate_new_annotation(filename, row[0], row[1], row[2], row[3], self.patch_size, self.patch_size)
+                                          for row in seg_.loc[:, ['xmin', 'ymin', 'xmax', 'ymax']].to_numpy()]
+                        self.new_annotations += new_annotation
+                        bg_patch.save(filename)
+                        cnt += 1
 
         # patch로 나눌 필요가 없어서 annotation 추가
         else:
@@ -219,6 +235,7 @@ class SKU110KSampler:
 
             if num_list < 10 or (i+1) % (num_list // 10) == 0:
                 print('{}% Done, {} Image Generated.'.format(int((i+1) / num_list * 100), cnt, num_list))
+        return cnt
 
     def generate_xml(self):
         print('Making XML annotations...')
@@ -260,9 +277,9 @@ class SKU110KSampler:
             tree = ElementTree(root)
             tree.write('dataset/annotations/' + x + '.xml')
 
-    def generate_ids(self, filename, start, end):
+    def generate_ids(self, filename, index):
         with open(filename, 'w') as f:
-            for i in range(start, end):
+            for i in index:
                 f.write(str(i)+'\n')
 
     # save XML from annotations
@@ -277,13 +294,16 @@ class SKU110KSampler:
         # make label txt
         self.loader.make_label()
         # split data
-        val = int((1.0-self.val_p-self.test_p) * len(self.random_list))
-        test = int((1.0-self.test_p) * len(self.random_list))
+        cnt = len(glob.glob('images/*.jpg'))
+        index = np.arange(cnt)
+        np.random.shuffle(index)
+        val = int((1.0-self.val_p-self.test_p) * cnt)
+        test = int((1.0-self.test_p) * cnt)
         # make dataset_ids
         print('Making dataset ids...')
-        self.generate_ids('dataset/dataset_ids/train.txt', 0, val)
-        self.generate_ids('dataset/dataset_ids/val.txt', val, test)
-        self.generate_ids('dataset/dataset_ids/test.txt', test, len(self.random_list))
+        self.generate_ids('dataset/dataset_ids/train.txt', index[:val])
+        self.generate_ids('dataset/dataset_ids/val.txt', index[val:test])
+        self.generate_ids('dataset/dataset_ids/test.txt', index[test:])
         # make XML
         self.generate_xml()
 
@@ -321,7 +341,7 @@ class SKU110KSampler:
 
 
 if __name__ == '__main__':
-    sampler = SKU110KSampler( num_files=10, patch_size=640, skip_p=0.3)
+    sampler = SKU110KSampler(num_files=10, patch_size=640, skip_p=0.3)
     sampler.generate_img_dataset()
     sampler.generate_annotations()
     sampler.check_error()
