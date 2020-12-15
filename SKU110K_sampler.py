@@ -33,6 +33,26 @@ def show_annotation(index=None, color=(0,255,0)):
         plt.imshow(img)
         plt.show()
 
+# 잘못된 xml 수정 (임시)
+def fix_error():
+    index = glob.glob('dataset/annotations/*.xml')
+    for idx, f in enumerate(index):
+        tree = ET.parse(f)
+        root = tree.getroot()
+        remove_list = []
+        for box in root[6:]:
+            for i in range(4):
+                if int(box[4][i].text) < 0:
+                    box[4][i].text = '0'
+                if int(box[4][i].text) >= 640:
+                    box[4][i].text = '639'
+            if int(box[4][0].text) >= int(box[4][2].text) or int(box[4][1].text) >= int(box[4][3].text):
+                remove_list.append(box)
+        for i in remove_list[::-1]:
+            root.remove(i)
+        tree.write(f)
+
+
 class SKU110KSampler:
     def __init__(self, dir='./SKU110K_fixed/', num_files=100, patch_size=None, skip_p=0.5, val_p=0.1, test_p=0.1):
         self.dir = dir if dir[-1] != '/' else dir+'/'
